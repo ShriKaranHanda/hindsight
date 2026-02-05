@@ -32,6 +32,8 @@ class OpticalMouseSimulator {
             estimatedDy: 0,
             trueDx: 0,
             trueDy: 0,
+            estimatedX: 0,
+            estimatedY: 0,
             error: 0
         };
         
@@ -130,6 +132,12 @@ class OpticalMouseSimulator {
             this.lastMouseY = this.mouseY;
             this.mouseX = e.clientX - rect.left;
             this.mouseY = e.clientY - rect.top;
+            
+            if (!this.isMouseOver) {
+                this.motion.estimatedX = this.mouseX;
+                this.motion.estimatedY = this.mouseY;
+            }
+            
             this.isMouseOver = true;
             
             this.motion.trueDx = this.mouseX - this.lastMouseX;
@@ -268,6 +276,7 @@ class OpticalMouseSimulator {
         if (this.isMouseOver) {
             const sensorSize = this.settings.sensorResolution;
             
+            // True position (Green)
             this.surfaceCtx.strokeStyle = '#4CAF50';
             this.surfaceCtx.lineWidth = 2;
             this.surfaceCtx.strokeRect(
@@ -289,6 +298,30 @@ class OpticalMouseSimulator {
             this.surfaceCtx.lineTo(this.mouseX + 10, this.mouseY);
             this.surfaceCtx.moveTo(this.mouseX, this.mouseY - 10);
             this.surfaceCtx.lineTo(this.mouseX, this.mouseY + 10);
+            this.surfaceCtx.stroke();
+
+            // Estimated position (Red)
+            this.surfaceCtx.strokeStyle = '#f44336';
+            this.surfaceCtx.lineWidth = 2;
+            this.surfaceCtx.strokeRect(
+                this.motion.estimatedX - sensorSize / 2,
+                this.motion.estimatedY - sensorSize / 2,
+                sensorSize,
+                sensorSize
+            );
+
+            this.surfaceCtx.fillStyle = '#f44336';
+            this.surfaceCtx.beginPath();
+            this.surfaceCtx.arc(this.motion.estimatedX, this.motion.estimatedY, 3, 0, Math.PI * 2);
+            this.surfaceCtx.fill();
+
+            this.surfaceCtx.strokeStyle = '#f44336';
+            this.surfaceCtx.lineWidth = 1;
+            this.surfaceCtx.beginPath();
+            this.surfaceCtx.moveTo(this.motion.estimatedX - 10, this.motion.estimatedY);
+            this.surfaceCtx.lineTo(this.motion.estimatedX + 10, this.motion.estimatedY);
+            this.surfaceCtx.moveTo(this.motion.estimatedX, this.motion.estimatedY - 10);
+            this.surfaceCtx.lineTo(this.motion.estimatedX, this.motion.estimatedY + 10);
             this.surfaceCtx.stroke();
         }
     }
@@ -455,6 +488,9 @@ class OpticalMouseSimulator {
         
         this.motion.estimatedDx = bestDx;
         this.motion.estimatedDy = bestDy;
+        
+        this.motion.estimatedX += bestDx;
+        this.motion.estimatedY += bestDy;
         
         const errorDx = this.motion.estimatedDx - this.motion.trueDx;
         const errorDy = this.motion.estimatedDy - this.motion.trueDy;
