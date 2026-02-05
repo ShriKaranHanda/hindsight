@@ -37,6 +37,10 @@ class OpticalMouseSimulator {
             error: 0
         };
         
+        // Feature tracking for improved accuracy
+        this.features = [];
+        this.maxFeatures = 8;
+        
         this.fps = 0;
         this.frameCount = 0;
         this.lastFpsUpdate = Date.now();
@@ -361,6 +365,7 @@ class OpticalMouseSimulator {
         
         if (this.lastSensorFrame) {
             this.estimateMotion(sensorData, this.lastSensorFrame);
+            this.detectFeatures(sensorData);
         }
         
         this.lastSensorFrame = new ImageData(
@@ -450,33 +455,25 @@ class OpticalMouseSimulator {
         const height = currentFrame.height;
         const searchRadius = this.settings.searchRadius;
         
+        // Phase 1: Feature-based tracking if available
         let bestDx = 0;
         let bestDy = 0;
         let bestScore = Infinity;
         
-        for (let dy = -searchRadius; dy <= searchRadius; dy++) {
-            for (let dx = -searchRadius; dx <= searchRadius; dx++) {
-                let score = 0;
-                let count = 0;
-                
-                for (let y = searchRadius; y < height - searchRadius; y++) {
-                    for (let x = searchRadius; x < width - searchRadius; x++) {
-                        const currIdx = (y * width + x) * 4;
-                        const prevX = x + dx;
-                        const prevY = y + dy;
-                        
-                        if (prevX >= 0 && prevX < width && prevY >= 0 && prevY < height) {
-                            const prevIdx = (prevY * width + prevX) * 4;
-                            
-                            const diff = currentFrame.data[currIdx] - lastFrame.data[prevIdx];
-                            score += diff * diff;
-                            count++;
-                        }
-                    }
-                }
-                
-                if (count > 0) {
-                    score /= count;
+        if (this.features.length > 0) {
+            const featureResult = this.trackFeatures(currentFrame, lastFrame);
+            if (featureResult.confidence > 0.3) {
+                bestDx = featureResult.dx;
+                bestDy = featureResult.dy;
+                bestScore = featureResult.error;
+            }
+        }
+        
+        // Phase 2: Coarse integer search as fallback or refinement
+        if (this.features.length === 0 || bestScore === Infinity) {
+            for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+                for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+                    const score = this.calculateSSD(currentFrame, lastFrame, dx, dy);
                     if (score < bestScore) {
                         bestScore = score;
                         bestDx = dx;
@@ -486,15 +483,297 @@ class OpticalMouseSimulator {
             }
         }
         
-        this.motion.estimatedDx = bestDx;
-        this.motion.estimatedDy = bestDy;
+        // Phase 2: Sub-pixel refinement around best integer match
+        const refined = this.subPixelRefinement(currentFrame, lastFrame, bestDx, bestDy);
+        bestDx = refined.dx;
+        bestDy = refined.dy;
         
-        this.motion.estimatedX += bestDx;
-        this.motion.estimatedY += bestDy;
+        // Phase 3: Temporal smoothing to reduce jitter
+        const smoothingFactor = 0.7;
+        this.motion.estimatedDx = this.motion.estimatedDx * smoothingFactor + bestDx * (1 - smoothingFactor);
+        this.motion.estimatedDy = this.motion.estimatedDy * smoothingFactor + bestDy * (1 - smoothingFactor);
+        
+        this.motion.estimatedX += this.motion.estimatedDx;
+        this.motion.estimatedY += this.motion.estimatedDy;
         
         const errorDx = this.motion.estimatedDx - this.motion.trueDx;
         const errorDy = this.motion.estimatedDy - this.motion.trueDy;
         this.motion.error = Math.sqrt(errorDx * errorDx + errorDy * errorDy);
+    }
+    
+    calculateSSD(currentFrame, lastFrame, dx, dy) {
+        const width = currentFrame.width;
+        const height = currentFrame.height;
+        const data1 = currentFrame.data;
+        const data2 = lastFrame.data;
+        
+        let score = 0;
+        let count = 0;
+        
+        // Sample fewer points for better performance
+        const step = 2;
+        
+        for (let y = 10; y < height - 10; y += step) {
+            for (let x = 10; x < width - 10; x += step) {
+                const currIdx = (y * width + x) * 4;
+                const prevX = Math.round(x + dx);
+                const prevY = Math.round(y + dy);
+                
+                if (prevX >= 0 && prevX < width && prevY >= 0 && prevY < height) {
+                    const prevIdx = (prevY * width + prevX) * 4;
+                    
+                    // Use normalized cross-correlation for better accuracy
+                    const diff = data1[currIdx] - data2[prevIdx];
+                    score += diff * diff;
+                    count++;
+                }
+            }
+        }
+        
+        return count > 0 ? score / count : Infinity;
+    }
+    
+    subPixelRefinement(currentFrame, lastFrame, intDx, intDy) {
+        const refinementRadius = 0.5;
+        const steps = 5;
+        let bestDx = intDx;
+        let bestDy = intDy;
+        let bestScore = Infinity;
+        
+        for (let i = 0; i <= steps; i++) {
+            for (let j = 0; j <= steps; j++) {
+                const dx = intDx - refinementRadius + (2 * refinementRadius * i / steps);
+                const dy = intDy - refinementRadius + (2 * refinementRadius * j / steps);
+                
+                const score = this.calculateBilinearSSD(currentFrame, lastFrame, dx, dy);
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestDx = dx;
+                    bestDy = dy;
+                }
+            }
+        }
+        
+        return { dx: bestDx, dy: bestDy };
+    }
+    
+    calculateBilinearSSD(currentFrame, lastFrame, dx, dy) {
+        const width = currentFrame.width;
+        const height = currentFrame.height;
+        const data1 = currentFrame.data;
+        const data2 = lastFrame.data;
+        
+        let score = 0;
+        let count = 0;
+        const step = 3;
+        
+        for (let y = 10; y < height - 10; y += step) {
+            for (let x = 10; x < width - 10; x += step) {
+                const currIdx = (y * width + x) * 4;
+                const prevX = x + dx;
+                const prevY = y + dy;
+                
+                if (prevX >= 0 && prevX < width - 1 && prevY >= 0 && prevY < height - 1) {
+                    const interpolated = this.bilinearInterpolation(data2, width, prevX, prevY);
+                    const diff = data1[currIdx] - interpolated;
+                    score += diff * diff;
+                    count++;
+                }
+            }
+        }
+        
+        return count > 0 ? score / count : Infinity;
+    }
+    
+    bilinearInterpolation(data, width, x, y) {
+        const x1 = Math.floor(x);
+        const y1 = Math.floor(y);
+        const x2 = x1 + 1;
+        const y2 = y1 + 1;
+        
+        const fx = x - x1;
+        const fy = y - y1;
+        
+        const idx11 = (y1 * width + x1) * 4;
+        const idx21 = (y1 * width + x2) * 4;
+        const idx12 = (y2 * width + x1) * 4;
+        const idx22 = (y2 * width + x2) * 4;
+        
+        const val11 = data[idx11];
+        const val21 = data[idx21];
+        const val12 = data[idx12];
+        const val22 = data[idx22];
+        
+        const val1 = val11 * (1 - fx) + val21 * fx;
+        const val2 = val12 * (1 - fx) + val22 * fx;
+        
+        return val1 * (1 - fy) + val2 * fy;
+    }
+    
+    detectFeatures(frame) {
+        const width = frame.width;
+        const height = frame.height;
+        const data = frame.data;
+        
+        // Simple corner detection using Harris-like approach
+        this.features = [];
+        const threshold = 1000;
+        const minDistance = 8;
+        
+        for (let y = 5; y < height - 5; y += 4) {
+            for (let x = 5; x < width - 5; x += 4) {
+                const score = this.calculateCornerScore(data, width, x, y);
+                
+                if (score > threshold) {
+                    // Check minimum distance from existing features
+                    let tooClose = false;
+                    for (const feature of this.features) {
+                        const dist = Math.sqrt((x - feature.x) ** 2 + (y - feature.y) ** 2);
+                        if (dist < minDistance) {
+                            tooClose = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!tooClose && this.features.length < this.maxFeatures) {
+                        this.features.push({
+                            x: x,
+                            y: y,
+                            score: score,
+                            lastX: x,
+                            lastY: y
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Sort by score and keep best features
+        this.features.sort((a, b) => b.score - a.score);
+        this.features = this.features.slice(0, this.maxFeatures);
+    }
+    
+    calculateCornerScore(data, width, x, y) {
+        // Simple gradient-based corner detection
+        const idx = (y * width + x) * 4;
+        
+        // Calculate gradients in different directions
+        const gx = data[(y * width + x + 1) * 4] - data[(y * width + x - 1) * 4];
+        const gy = data[((y + 1) * width + x) * 4] - data[((y - 1) * width + x) * 4];
+        const gxy = data[((y + 1) * width + x + 1) * 4] - data[((y - 1) * width + x - 1) * 4];
+        
+        // Harris corner score approximation
+        return Math.abs(gx) + Math.abs(gy) + Math.abs(gxy);
+    }
+    
+    trackFeatures(currentFrame, lastFrame) {
+        if (this.features.length === 0) {
+            return { dx: 0, dy: 0, confidence: 0, error: Infinity };
+        }
+        
+        let totalDx = 0;
+        let totalDy = 0;
+        let trackedCount = 0;
+        let totalError = 0;
+        
+        for (const feature of this.features) {
+            const result = this.trackSingleFeature(currentFrame, lastFrame, feature);
+            
+            if (result.tracked) {
+                totalDx += result.dx;
+                totalDy += result.dy;
+                totalError += result.error;
+                trackedCount++;
+                
+                // Update feature position for next frame
+                feature.lastX = feature.x;
+                feature.lastY = feature.y;
+                feature.x = result.newX;
+                feature.y = result.newY;
+            }
+        }
+        
+        if (trackedCount === 0) {
+            return { dx: 0, dy: 0, confidence: 0, error: Infinity };
+        }
+        
+        const avgDx = totalDx / trackedCount;
+        const avgDy = totalDy / trackedCount;
+        const avgError = totalError / trackedCount;
+        const confidence = trackedCount / this.features.length;
+        
+        return { dx: avgDx, dy: avgDy, confidence, error: avgError };
+    }
+    
+    trackSingleFeature(currentFrame, lastFrame, feature) {
+        const searchRadius = 5;
+        const width = currentFrame.width;
+        const height = currentFrame.height;
+        const data1 = currentFrame.data;
+        const data2 = lastFrame.data;
+        
+        let bestDx = 0;
+        let bestDy = 0;
+        let bestScore = Infinity;
+        let tracked = false;
+        
+        // Extract feature patch from last frame
+        const patchSize = 5;
+        const patch = [];
+        
+        for (let py = -patchSize; py <= patchSize; py++) {
+            for (let px = -patchSize; px <= patchSize; px++) {
+                const x = feature.lastX + px;
+                const y = feature.lastY + py;
+                
+                if (x >= 0 && x < width && y >= 0 && y < height) {
+                    patch.push(data2[(y * width + x) * 4]);
+                } else {
+                    patch.push(0);
+                }
+            }
+        }
+        
+        // Search for best match in current frame
+        for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+            for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+                const newX = feature.x + dx;
+                const newY = feature.y + dy;
+                
+                if (newX >= patchSize && newX < width - patchSize && 
+                    newY >= patchSize && newY < height - patchSize) {
+                    
+                    let score = 0;
+                    let patchIdx = 0;
+                    
+                    for (let py = -patchSize; py <= patchSize; py++) {
+                        for (let px = -patchSize; px <= patchSize; px++) {
+                            const x = newX + px;
+                            const y = newY + py;
+                            const currVal = data1[(y * width + x) * 4];
+                            const diff = currVal - patch[patchIdx++];
+                            score += diff * diff;
+                        }
+                    }
+                    
+                    if (score < bestScore) {
+                        bestScore = score;
+                        bestDx = dx;
+                        bestDy = dy;
+                        tracked = true;
+                    }
+                }
+            }
+        }
+        
+        return {
+            dx: bestDx,
+            dy: bestDy,
+            newX: feature.x + bestDx,
+            newY: feature.y + bestDy,
+            error: bestScore,
+            tracked: tracked
+        };
     }
     
     updateUI() {
