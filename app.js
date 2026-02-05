@@ -446,8 +446,8 @@ class OpticalMouseSimulator {
                     score /= count;
                     if (score < bestScore) {
                         bestScore = score;
-                        bestDx = -dx;
-                        bestDy = -dy;
+                        bestDx = dx;
+                        bestDy = dy;
                     }
                 }
             }
