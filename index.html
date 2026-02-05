@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optical Mouse Camera Simulator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Optical Mouse Camera Simulator</h1>
+            <p>Move your mouse over the surface to see what an optical mouse sensor sees</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="surface-panel">
+                <h2>Surface</h2>
+                <div class="canvas-container">
+                    <canvas id="surfaceCanvas" width="600" height="600"></canvas>
+                </div>
+                <div class="surface-controls">
+                    <label for="imageUpload" class="upload-btn">Upload Custom Surface</label>
+                    <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+                    <button id="resetSurface">Reset to Default</button>
+                </div>
+            </div>
+            
+            <div class="sensor-panel">
+                <h2>Optical Sensor View</h2>
+                <div class="canvas-container">
+                    <canvas id="sensorCanvas" width="400" height="400"></canvas>
+                </div>
+                
+                <div class="info-panel">
+                    <h3>Position</h3>
+                    <div class="info-row">
+                        <span>X: <span id="posX">0</span> px</span>
+                        <span>Y: <span id="posY">0</span> px</span>
+                    </div>
+                    
+                    <h3>Motion Estimation</h3>
+                    <div class="info-row">
+                        <span>Δx: <span id="deltaX">0.0</span> px/frame</span>
+                        <span>Δy: <span id="deltaY">0.0</span> px/frame</span>
+                    </div>
+                    <div class="info-row">
+                        <span>True Δx: <span id="trueDeltaX">0.0</span> px/frame</span>
+                        <span>True Δy: <span id="trueDeltaY">0.0</span> px/frame</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Error: <span id="error">0.0</span> px</span>
+                    </div>
+                    <div class="info-row">
+                        <span>FPS: <span id="fps">0</span></span>
+                    </div>
+                </div>
+                
+                <div class="controls">
+                    <h3>Sensor Settings</h3>
+                    
+                    <div class="control-group">
+                        <label for="sensorResolution">Sensor Resolution: <span id="resolutionValue">32</span>x<span id="resolutionValue2">32</span></label>
+                        <input type="range" id="sensorResolution" min="16" max="128" value="32" step="16">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="sensorZoom">Display Zoom: <span id="zoomValue">12.5</span>x</label>
+                        <input type="range" id="sensorZoom" min="5" max="20" value="12.5" step="0.5">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="samplingFPS">Sampling FPS: <span id="fpsValue">60</span></label>
+                        <input type="range" id="samplingFPS" min="10" max="120" value="60" step="10">
+                    </div>
+                    
+                    <h3>Sensor Effects</h3>
+                    
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="grayscale" checked>
+                            Grayscale
+                        </label>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="contrast">Contrast: <span id="contrastValue">1.0</span></label>
+                        <input type="range" id="contrast" min="0.5" max="3.0" value="1.0" step="0.1">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="threshold">
+                            Binary Threshold
+                        </label>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="thresholdValue">Threshold Level: <span id="thresholdLevelValue">128</span></label>
+                        <input type="range" id="thresholdValue" min="0" max="255" value="128" step="1">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="noise">Noise: <span id="noiseValue">0</span></label>
+                        <input type="range" id="noise" min="0" max="50" value="0" step="1">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="blur">Blur: <span id="blurValue">0</span></label>
+                        <input type="range" id="blur" min="0" max="5" value="0" step="0.5">
+                    </div>
+                    
+                    <h3>Motion Estimation</h3>
+                    
+                    <div class="control-group">
+                        <label for="searchRadius">Search Radius: <span id="searchRadiusValue">8</span> px</label>
+                        <input type="range" id="searchRadius" min="2" max="16" value="8" step="1">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
